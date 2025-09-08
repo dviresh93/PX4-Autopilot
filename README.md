@@ -4,13 +4,15 @@
 
 This repository contains a custom implementation of **Toss-to-Launch** functionality for PX4 autopilot, developed by dviresh93. This feature allows a multicopter to automatically arm, stabilize, and enter controlled flight when thrown into the air, eliminating the need for manual throttle-up during launch.
 
+**Implementation Note**: ACRO mode was selected as the activation trigger for this implementation purely for convenience, as it is the least commonly used flight mode in PX4. The toss-to-launch logic is completely separate from ACRO mode's original functionality - ACRO mode simply serves as the switch to enable the custom toss-to-launch behavior.
+
 ## Key Features
 
 - **Automatic throw detection** using velocity and acceleration thresholds
 - **Safe arming sequence** that only activates during actual throw motion  
 - **Intelligent flight mode progression** from throw detection to stable hover to landing
 - **Safety mechanisms** to prevent accidental activation and ensure controlled operation
-- **ACRO mode integration** as the activation trigger while preventing manual control
+- **ACRO mode repurposing** as a convenient activation trigger (chosen for being rarely used)
 
 ## Implementation Details
 
@@ -34,10 +36,12 @@ enum throw_stage{
 
 #### 2. Activation Logic (`src/modules/commander/Commander.cpp:2543-2559`)
 
-- **Mode Trigger**: ACRO flight mode selection
+- **Mode Trigger**: ACRO flight mode selection (chosen arbitrarily as the least used mode)
 - **Safety Condition**: Vehicle must be disarmed
 - **RC Requirement**: Valid RC signal must be present
 - **Throttle Independence**: No longer requires zero throttle (removed in commit 06cede9c5f)
+
+When ACRO mode is selected, the system completely overrides ACRO's normal behavior and activates the custom toss-to-launch logic instead.
 
 #### 3. Throw Detection Algorithm (`src/modules/commander/Commander.cpp:2712-2720`)
 
@@ -77,10 +81,10 @@ bool Commander::throw_detected(){
 
 ### Safety Features
 
-#### 1. ACRO Mode Lockout (`src/modules/mc_rate_control/MulticopterRateControl.cpp:210-240`)
+#### 1. ACRO Mode Override (`src/modules/mc_rate_control/MulticopterRateControl.cpp:210-240`)
 
 ```cpp
-// Disabled manual control in ACRO mode for toss-to-launch safety
+// Override ACRO mode's normal manual control for toss-to-launch implementation
 const Vector3f man_rate_sp{
     math::superexpo(0.0f, _param_mc_acro_expo.get(), _param_mc_acro_supexpo.get()),
     math::superexpo(0.0f, _param_mc_acro_expo.get(), _param_mc_acro_supexpo.get()),
@@ -89,7 +93,7 @@ const Vector3f man_rate_sp{
 _thrust_sp = 0.0f;  // Zero thrust command
 ```
 
-This prevents manual control if a user accidentally arms in ACRO mode outside of toss-to-launch.
+This completely disables ACRO mode's original manual rate control functionality, repurposing the mode for toss-to-launch. This prevents any manual flight control when ACRO mode is selected.
 
 #### 2. Pre-flight Check Modifications (`src/modules/commander/Arming/PreFlightCheck/checks/accelerometerCheck.cpp:76-88`)
 
@@ -199,7 +203,7 @@ flowchart TD
 ## Usage Instructions
 
 1. **Setup**: Ensure vehicle is disarmed and on level surface
-2. **Activation**: Switch flight mode to ACRO 
+2. **Activation**: Switch flight mode to ACRO (this enables toss-to-launch, not normal ACRO flight)
 3. **Preparation**: Verify RC signal is present - vehicle ready indication
 4. **Launch**: Throw vehicle firmly (>2.5 m/s) in any direction
 5. **Autonomous Sequence**: Vehicle will automatically:
@@ -208,9 +212,11 @@ flowchart TD
    - Switch to position/altitude hold
    - Eventually land (currently simplified)
 
+**Important**: When ACRO mode is selected, normal ACRO flight controls are completely disabled - the mode only serves to activate toss-to-launch functionality.
+
 ## Safety Considerations
 
-- **ACRO Mode Restriction**: Manual control disabled in ACRO mode prevents accidental flight
+- **ACRO Mode Repurposing**: Normal ACRO flight controls are completely disabled when mode is selected
 - **RC Signal Required**: Ensures operator presence and ability to switch modes if needed
 - **Throw Detection Threshold**: 2.5 m/s minimum prevents accidental activation
 - **Free-Fall Check**: Additional safety to confirm actual throw motion
